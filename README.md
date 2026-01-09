@@ -4,7 +4,7 @@ A production-grade bi-directional synchronization system between Google Sheets a
 
 ---
 
-## 📌 Problem Statement
+## Problem Statement
 
 Build a system that maintains a live two-way data sync between a Google Sheet and a MySQL database. Any change made in one system should be reflected in the other system in near real-time.
 
@@ -12,7 +12,7 @@ The system is designed to be schema-agnostic, reliable under concurrent edits, a
 
 ---
 
-## 🧠 High-Level Architecture
+## High-Level Architecture
 
 Google Sheets and MySQL act as independent data sources. A central Sync Service detects changes from both systems, normalizes updates, resolves conflicts, and propagates changes safely.
 
@@ -22,7 +22,7 @@ Google Sheets <--> Sync Service <--> MySQL
 
 ---
 
-## ⚙️ Core Features
+## Core Features
 
 - Bi-directional data synchronization
 - Schema-agnostic table handling
@@ -33,7 +33,7 @@ Google Sheets <--> Sync Service <--> MySQL
 
 ---
 
-## 🧩 Assumptions
+## Assumptions
 
 - A single Google Sheet maps to a single MySQL table
 - Each row has a unique primary key
@@ -42,12 +42,12 @@ Google Sheets <--> Sync Service <--> MySQL
 
 ---
 
-## 🚧 Work in Progress
+## Work in Progress
 
 This project is being developed as part of the FDE Internship assignment at Superjoin.
 
 ---
 
-## 📄 License
+## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
