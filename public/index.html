@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Sync Dashboard</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #f4f7f9;
+            color: #333;
+            padding: 40px; 
+        }
+        .container { max-width: 600px; margin: 0 auto; }
+        .card { 
+            background: white;
+            border: 1px solid #e1e4e8; 
+            padding: 25px; 
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        h1 { font-size: 24px; margin-bottom: 20px; color: #1a1a1a; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-size: 12px; color: #666; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; }
+        input { 
+            width: 100%;
+            padding: 10px; 
+            margin-bottom: 10px;
+            border: 1px solid #ccc; 
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        button { 
+            width: 100%;
+            padding: 12px; 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer; 
+        }
+        button:hover { background: #0056b3; }
+        .add-col-section {
+            border-top: 1px solid #eee;
+            margin-top: 20px;
+            padding-top: 20px;
+        }
+        .add-col-section input { width: 70%; margin-right: 5%; }
+        .add-col-section button { width: 20%; display: inline-block; padding: 10px; background: #28a745; }
+        #msg { 
+            margin-top: 20px; 
+            padding: 12px;
+            border-radius: 6px;
+            display: none;
+            text-align: center;
+            font-size: 14px;
+        }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Sync Management System</h1>
+        
+        <div class="card">
+            <h3>Update Record</h3>
+            <div id="dynamic-fields">
+                <p>Loading schema...</p>
+            </div>
+            
+            <button id="submitBtn" onclick="updateDB()">Execute Synchronized Update</button>
+
+            <div class="add-col-section">
+                <p style="font-size: 12px; font-weight: bold;">ADD NEW PROPERTY (SCHEMA MIGRATION)</p>
+                <input type="text" id="new_col_name" placeholder="Column Name (e.g. phone)">
+                <button onclick="addNewField()">Add</button>
+            </div>
+        </div>
+
+        <div id="msg"></div>
+    </div>
+
+    <script>
+        // Global list of columns found in the DB
+        let currentColumns = [];
+
+        // 1. Initial Load: Fetch schema from the server
+        window.onload = async () => {
+            await refreshSchema();
+        };
+
+        async function refreshSchema() {
+            try {
+                // We use your existing /test-db or create a small endpoint to get column names
+                const res = await fetch('/test-db-schema'); 
+                const data = await res.json();
+                
+                if (data.columns) {
+                    currentColumns = data.columns;
+                    renderFields();
+                }
+            } catch (err) {
+                console.error("Failed to load schema", err);
+                // Fallback to basic fields if schema fetch fails
+                currentColumns = ['sync_id', 'name', 'email', 'status'];
+                renderFields();
+            }
+        }
+
+        function renderFields() {
+            const container = document.getElementById('dynamic-fields');
+            container.innerHTML = '';
+
+            currentColumns.forEach(col => {
+                // Skip auto-generated DB fields
+                if (col === 'id' || col === 'updated_at') return;
+
+                const group = document.createElement('div');
+                group.className = 'form-group';
+                
+                const label = document.createElement('label');
+                label.innerText = col;
+                
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.id = `field_${col}`;
+                input.placeholder = `Enter ${col}...`;
+                
+                // Keep sync_id at the top and visually distinct
+                if (col === 'sync_id') {
+                    input.style.borderColor = '#007bff';
+                }
+
+                group.appendChild(label);
+                group.appendChild(input);
+                container.appendChild(group);
+            });
+        }
+
+        // 2. Client-side logic to add a field to the UI (it will be created in DB on next update)
+        function addNewField() {
+            const newCol = document.getElementById('new_col_name').value.trim().toLowerCase();
+            if (newCol && !currentColumns.includes(newCol)) {
+                currentColumns.push(newCol);
+                renderFields();
+                document.getElementById('new_col_name').value = '';
+                displayMessage(`Added ${newCol} to form. It will be created in the database upon update.`, "success");
+            }
+        }
+
+        // 3. The Update Logic: Collects all dynamic fields and sends to backend
+        async function updateDB() {
+            const syncBtn = document.getElementById('submitBtn');
+            const sync_id = document.getElementById('field_sync_id').value.trim();
+
+            if (!sync_id) {
+                displayMessage("Error: sync_id is required for lookups.", "error");
+                return;
+            }
+
+            syncBtn.disabled = true;
+            syncBtn.innerText = "Processing Sync...";
+
+            try {
+                // Construct dynamic data object from all rendered inputs
+                const payload = {};
+                currentColumns.forEach(col => {
+                    const el = document.getElementById(`field_${col}`);
+                    if (el) payload[col] = el.value.trim();
+                });
+
+                const res = await fetch('/api/update-user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await res.json();
+                displayMessage(result.message, res.ok ? "success" : "error");
+                
+                // If we added a new column, refresh from server to confirm migration
+                if (res.ok) await refreshSchema();
+
+            } catch (err) {
+                displayMessage("Error: Server unreachable", "error");
+            } finally {
+                syncBtn.disabled = false;
+                syncBtn.innerText = "Execute Synchronized Update";
+            }
+        }
+
+        function displayMessage(text, type) {
+            const msgElement = document.getElementById('msg');
+            msgElement.innerText = text;
+            msgElement.className = type;
+            msgElement.style.display = "block";
+        }
+    </script>
+</body>
+</html>
