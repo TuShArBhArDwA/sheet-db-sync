@@ -1,145 +1,79 @@
-# Google Sheets <-> MySQL Bi-Directional Sync System
+# High-Performance Bi-Directional Sync: MySQL & Google Sheets
 
-A production-grade synchronization engine designed to keep a MySQL database table in sync with a Google Sheet. It supports two-way data propagation, conflict resolution, and failure recovery.
+A production-grade synchronization engine that bridges the gap between structured SQL databases and flexible Google Sheets. This solution is designed for **scale, multiplayer usage, and dynamic data structures.**
 
 ---
 
-## Features
+## Demo & Submission Links
 
-- **Bi-Directional Sync:** Changes in Database -> Sheet, and Sheet -> Database.
-- **Conflict Resolution:** Configurable strategies (`a-wins`, `b-wins`).
-- **State-Based Diffing:** Uses a metadata store to detect changes efficiently and prevent infinite loops.
-- **Type Safety:** Built with TypeScript.
-- **Robustness:** Handles API rate limits, network failures, and basic data validation.
+* **GitHub Repository:** [https://github.com/TuShArBhArDwA/sheet-db-sync](https://github.com/TuShArBhArDwA/sheet-db-sync)
+* **Video Walkthrough:** `[Insert Your Loom/Drive Video Link Here]`
+* **Live Dashboard:** `[Insert Your Hosted/Tunnel Link Here]`
+
+---
+
+## Key Features & Technical Depth
+
+### 1. Dynamic Schema Auto-Migration 🛠️
+Unlike basic sync tools, this system handles **Any Structure, Any Type**.
+* **Auto-Detection:** If a user adds a new column (e.g., `Phone`) in the Google Sheet header, the engine detects the "Schema Drift."
+* **Auto-Migration:** The backend automatically executes an `ALTER TABLE` command in MySQL to create the missing column in real-time.
+
+### 2. Intelligent Bi-Directional Propagation 🔄
+* **Sheet ➔ DB:** Real-time updates via Google Apps Script Webhooks.
+* **DB ➔ Sheet:** Updates triggered via the Dashboard API with atomic row-matching logic.
+
+### 3. Dynamic UI Generation 💻
+The frontend dashboard is **headless**. It queries the MySQL schema and dynamically renders the appropriate input fields, ensuring the UI always reflects the database state.
+
+### 4. Multiplayer & Scale Optimization ⚡
+* **Connection Pooling:** Uses `mysql2` connection pools to handle concurrent writes from multiple users without dropping connections.
+* **Upsert Logic:** Uses `ON DUPLICATE KEY UPDATE` to prevent primary key conflicts and ensure idempotency.
+
+---
+
+## Nuances & Edge Cases Handled
+
+| Edge Case | Solution |
+| :--- | :--- |
+| **Schema Drift** | System treats Sheet Row 1 as the source of truth and migrates the DB to match. |
+| **Infinite Loop Prevention** | Webhook triggers are isolated from API updates to prevent circular sync loops. |
+| **Rate Limiting** | Implements basic error handling for Google Sheets API v4 quota limits. |
+| **Data Integrity** | Uses a required `sync_id` to maintain a persistent link between records even if the Sheet is sorted. |
+| **Type Safety** | Built entirely in TypeScript to prevent runtime data-type mismatches. |
 
 ---
 
 ## Architecture
 
-The system uses a **Hub-and-Spoke** architecture with a central state store.
+The system uses a **Node.js/Express** backbone with **Service Account** authentication for secure, server-to-server communication.
 
-```mermaid
-graph TD
-    DB[(MySQL)] <-->|Adapter| Engine[Sync Engine]
-    Sheet[Google Sheets] <-->|Adapter| Engine
-    Engine <-->|Read/Write| State[.sync_state.json]
-```
 
-### How it works
-
-1.  **Fetch:** The engine pulls all records from both MySQL and Google Sheets.
-2.  **Diff:** It compares the current state of each record against a locally persisted `state` (hash).
-3.  **Detect:**
-    - If DB changed but Sheet didn't -> Push to Sheet.
-    - If Sheet changed but DB didn't -> Push to DB.
-    - If both changed -> Apply Conflict Strategy (Default: DB Wins).
-4.  **Commit:** Updates are applied to the target, and the `state` is updated only upon success.
 
 ---
 
-## Prerequisites
+## Setup & Installation
 
-- **Node.js** v18+
-- **MySQL** Database
-- **Google Cloud Service Account** with `Google Sheets API` enabled.
-
----
-
-## Installation
-
-1.  **Clone the repository:**
-
+1.  **Clone & Install:**
     ```bash
-    git clone https://github.com/TuShArBhArDwA/sheet-db-sync.git
-    cd sheet-db-sync
-    ```
-
-2.  **Install dependencies:**
-
-    ```bash
+    git clone [https://github.com/TuShArBhArDwA/sheet-db-sync.git](https://github.com/TuShArBhArDwA/sheet-db-sync.git)
     npm install
     ```
 
-3.  **Build the project:**
-    ```bash
-    npm run build
+2.  **Environment Setup:**
+    Create a `.env` file (see `.env.example`):
+    ```env
+    DB_HOST=localhost
+    DB_USER=root
+    DB_PASSWORD=your_password
+    DB_NAME=your_db
+    SPREADSHEET_ID=your_id
     ```
 
----
-
-## Configuration
-
-Create a `config.yaml` file in the root directory.
-
-```yaml
-adapterA:
-  host: "localhost"
-  user: "root"
-  password: "password"
-  database: "prod_db"
-
-adapterB:
-  credentialsPath: "./credentials.json"
-  spreadsheetId: "1BxiM..."
-
-mapping:
-  direction: "bidirectional"
-  conflictStrategy: "a-wins" # Options: a-wins, b-wins
-
-  sourceA:
-    type: "mysql"
-    table: "users"
-    keyColumn: "id" # The Primary Key
-    columns: # Database columns to sync
-      - "full_name"
-      - "email"
-      - "status"
-
-  sourceB:
-    type: "sheets"
-    range: "Sheet1!A:Z"
-    keyColumn: "id" # MUST match the header in the Google Sheet
-    columns: # MUST match the headers in the Google Sheet exactly
-      - "full_name"
-      - "email"
-      - "status"
-```
-
-> **Important:** The column names in `columns` must match EXACTLY between the Database column names and the Google Sheet (Row 1) headers.
-
----
-
-## Usage
-
-Run the sync once:
-
-```bash
-npm start
-```
-
-Run in development mode (with hot reload):
-
-```bash
-npm run dev
-```
-
----
-
-## Failure Handling
-
-- **Rate Limiting:** The Google Sheets adapter handles basic quotarelimits.
-- **State Corruption:** If `.sync_state.json` is deleted, the system treats all records as "New" or "Modified" and will attempt to re-sync.
-  - _Note:_ Without state, the engine relies on the Conflict Strategy. If `a-wins`, it will overwrite the Sheet with DB data.
-- **Logs:** Logs are written to `sync.log` and stdout.
-
----
-
-## Edge Cases & Limitations
-
-1.  **Deletions:** Physical deletion is currently **disabled** for safety. Deleted rows in the DB are ignored.
-2.  **Schema Changes:** If you rename a column in MySQL, you must update the config and the Sheet header.
-3.  **Large Datasets:** The system fetches full datasets. Performance may degrade >50k rows.
-
+3.  **Run:**
+    ```bash
+    npm run dev
+    ```
 ---
 
 ## Sponsor
