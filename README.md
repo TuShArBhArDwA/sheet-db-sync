@@ -7,26 +7,25 @@ A production-grade synchronization engine that bridges the gap between structure
 ## Demo & Submission Links
 
 * **GitHub Repository:** [https://github.com/TuShArBhArDwA/sheet-db-sync](https://github.com/TuShArBhArDwA/sheet-db-sync)
-* **Video Walkthrough:** `[Insert Your Loom/Drive Video Link Here]`
-* **Live Dashboard:** `[Insert Your Hosted/Tunnel Link Here]`
-
+* **Video Walkthrough:** sooon
+* **Live Dashboard:** sooon
 ---
 
 ## Key Features & Technical Depth
 
-### 1. Dynamic Schema Auto-Migration 🛠️
+### 1. Dynamic Schema Auto-Migration
 Unlike basic sync tools, this system handles **Any Structure, Any Type**.
 * **Auto-Detection:** If a user adds a new column (e.g., `Phone`) in the Google Sheet header, the engine detects the "Schema Drift."
 * **Auto-Migration:** The backend automatically executes an `ALTER TABLE` command in MySQL to create the missing column in real-time.
 
-### 2. Intelligent Bi-Directional Propagation 🔄
+### 2. Intelligent Bi-Directional Propagation
 * **Sheet ➔ DB:** Real-time updates via Google Apps Script Webhooks.
 * **DB ➔ Sheet:** Updates triggered via the Dashboard API with atomic row-matching logic.
 
-### 3. Dynamic UI Generation 💻
+### 3. Dynamic UI Generation
 The frontend dashboard is **headless**. It queries the MySQL schema and dynamically renders the appropriate input fields, ensuring the UI always reflects the database state.
 
-### 4. Multiplayer & Scale Optimization ⚡
+### 4. Multiplayer & Scale Optimization
 * **Connection Pooling:** Uses `mysql2` connection pools to handle concurrent writes from multiple users without dropping connections.
 * **Upsert Logic:** Uses `ON DUPLICATE KEY UPDATE` to prevent primary key conflicts and ensure idempotency.
 
