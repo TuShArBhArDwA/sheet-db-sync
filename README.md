@@ -59,7 +59,7 @@ To handle concurrent usage by multiple team members:
 1.  **Clone & Install:**
 
     ```bash
-    git clone [https://github.com/TuShArBhArDwA/sheet-db-sync.git](https://github.com/TuShArBhArDwA/sheet-db-sync.git)
+    git clone https://github.com/TuShArBhArDwA/sheet-db-sync.git
     npm install
     ```
 
