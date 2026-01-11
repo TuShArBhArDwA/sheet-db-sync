@@ -4,11 +4,9 @@ A production-grade synchronization engine that bridges the gap between structure
 
 ---
 
-## Submission Links
+## Video Walkthrough
 
-- **GitHub Repository:** [https://github.com/TuShArBhArDwA/sheet-db-sync](https://github.com/TuShArBhArDwA/sheet-db-sync)
-- **Video Walkthrough:** soon
-- **Live Dashboard:** [https://sheet-db-sync.vercel.app](https://sheet-db-sync.vercel.app)
+- **Demo Video:** [https://www.loom.com/share/6bdee143917d4700b4dff5ec32377759](https://www.loom.com/share/6bdee143917d4700b4dff5ec32377759)
 
 ---
 
