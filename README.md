@@ -4,54 +4,53 @@ A production-grade synchronization engine that bridges the gap between structure
 
 ---
 
-## Demo & Submission Links
+## Submission Links
 
 - **GitHub Repository:** [https://github.com/TuShArBhArDwA/sheet-db-sync](https://github.com/TuShArBhArDwA/sheet-db-sync)
-- **Video Walkthrough:** sooon
-- **Live Dashboard:** sooon
+- **Video Walkthrough:** soon
+- **Live Dashboard:** [https://sheet-db-sync.vercel.app](https://sheet-db-sync.vercel.app)
 
 ---
 
-## Key Features & Technical Depth
+## Technical Depth & Implementation
 
-### 1. Dynamic Schema Auto-Migration
+### 1. Dynamic Schema Auto-Migration (Any Structure, Any Type)
 
-Unlike basic sync tools, this system handles **Any Structure, Any Type**.
+This system treats Google Sheets as a living schema.
 
-- **Auto-Detection:** If a user adds a new column (e.g., `Phone`) in the Google Sheet header, the engine detects the "Schema Drift."
-- **Auto-Migration:** The backend automatically executes an `ALTER TABLE` command in MySQL to create the missing column in real-time.
+- **Drift Detection:** The engine compares the incoming Sheet payload with the MySQL Information Schema.
+- **Just-In-Time Migration:** If a user adds a new column (e.g., `Department`) in the Sheet, the backend automatically executes an `ALTER TABLE` command in MySQL to create the column with `TEXT` flexibility in real-time.
 
-### 2. Intelligent Bi-Directional Propagation
+### 2. Headless UI Generation
 
-- **Sheet ➔ DB:** Real-time updates via Google Apps Script Webhooks.
-- **DB ➔ Sheet:** Updates triggered via the Dashboard API with atomic row-matching logic.
+The frontend dashboard is **schema-agnostic**. Instead of hardcoded forms, it queries the database metadata to dynamically render input fields. This ensures that when the spreadsheet structure evolves, the management interface updates itself without a single line of code change.
 
-### 3. Dynamic UI Generation
+### 3. Optimized for Multiplayer & Scale (Bonus Requirement)
 
-The frontend dashboard is **headless**. It queries the MySQL schema and dynamically renders the appropriate input fields, ensuring the UI always reflects the database state.
+To handle concurrent usage by multiple team members:
 
-### 4. Multiplayer & Scale Optimization
+- **Connection Pooling:** Implemented `mysql2` pooling to manage database connections efficiently under load.
+- **Atomic Upserts:** Utilizes `ON DUPLICATE KEY UPDATE` (Upsert) logic. This ensures that if two users edit the same record simultaneously, the database resolves the state idempotently without creating duplicate entries.
+- **Service Account Integration:** Uses Google Server-to-Server authentication, bypassing the need for individual user OAuth and providing a stable, high-quota pipe for data.
 
-- **Connection Pooling:** Uses `mysql2` connection pools to handle concurrent writes from multiple users without dropping connections.
-- **Upsert Logic:** Uses `ON DUPLICATE KEY UPDATE` to prevent primary key conflicts and ensure idempotency.
+---
+
+## System Architecture
+
+1. **Sheet → DB:** Google Apps Script `onEdit` trigger ➔ Ngrok Webhook ➔ Express.js ➔ MySQL Upsert.
+2. **Dashboard → Sheet:** React/HTML Frontend ➔ Express API ➔ MySQL Update ➔ Google Sheets API v4 ➔ Sheet Row Update.
 
 ---
 
 ## Nuances & Edge Cases Handled
 
-| Edge Case                    | Solution                                                                                             |
-| :--------------------------- | :--------------------------------------------------------------------------------------------------- |
-| **Schema Drift**             | System treats Sheet Row 1 as the source of truth and migrates the DB to match.                       |
-| **Infinite Loop Prevention** | Webhook triggers are isolated from API updates to prevent circular sync loops.                       |
-| **Rate Limiting**            | Implements basic error handling for Google Sheets API v4 quota limits.                               |
-| **Data Integrity**           | Uses a required `sync_id` to maintain a persistent link between records even if the Sheet is sorted. |
-| **Type Safety**              | Built entirely in TypeScript to prevent runtime data-type mismatches.                                |
-
----
-
-## Architecture
-
-The system uses a **Node.js/Express** backbone with **Service Account** authentication for secure, server-to-server communication.
+| Feature                        | Handling Strategy                                                                                                                                                                         |
+| :----------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Circular Sync Loops**        | Implemented logic to ensure updates pushed from the Dashboard to the Sheet do not trigger the Sheet's webhook back to the DB, preventing infinite loops.                                  |
+| **Data Persistence Guardrail** | While schema migration is additive (adding columns), **destructive migration (dropping columns)** is intentionally disabled to prevent accidental data loss from spreadsheet human error. |
+| **Column Reordering**          | Data mapping is performed via **Header Keys** rather than column indices. The system remains functional even if a user moves "Email" from Column B to Column E.                           |
+| **Primary Key Integrity**      | The `sync_id` is treated as a persistent anchor. If a user deletes a row and re-adds it, the system re-links it based on this unique identifier.                                          |
+| **Type Resilience**            | All incoming data is sanitized and cast as strings/text in the DB migration to accommodate the "untyped" nature of Google Sheets cells.                                                   |
 
 ---
 
@@ -65,7 +64,7 @@ The system uses a **Node.js/Express** backbone with **Service Account** authenti
     ```
 
 2.  **Environment Setup:**
-    Create a `.env` file (see `.env.example`):
+    Environment Setup: Create a `.env` file based on the provided template:
 
     ```env
     DB_HOST=localhost
@@ -75,7 +74,9 @@ The system uses a **Node.js/Express** backbone with **Service Account** authenti
     SPREADSHEET_ID=your_id
     ```
 
-3.  **Run:**
+3.  Service Account: Place your `service-account.json` in the root directory.
+
+4.  **Run:**
     ```bash
     npm run dev
     ```
