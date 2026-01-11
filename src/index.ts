@@ -32,156 +32,148 @@ const sheets = google.sheets({ version: 'v4', auth });
 
 const getSpreadsheetId = (): string => {
     const id = process.env.SPREADSHEET_ID;
-    if (!id) throw new Error("Spreadsheet ID configuration missing in environment variables");
+    if (!id) throw new Error("Spreadsheet ID configuration missing");
     return id;
 };
 
 /**
- * Ensures the database table structure matches the incoming data.
- * If a key exists in the data but not in the table, it adds a new column.
+ * PRODUCTION READY: Auto-Migration Logic
+ * Detects new columns in the payload and alters MySQL table in real-time.
  */
 async function ensureSchemaMatches(tableName: string, data: any) {
     const [columns]: any = await pool.query(`SHOW COLUMNS FROM ${tableName}`);
     const existingColumns = columns.map((col: any) => col.Field);
 
     for (const key of Object.keys(data)) {
+        // Skip keys that shouldn't be DB columns
+        if (key === 'id' || key === 'updated_at') continue;
+
         if (!existingColumns.includes(key)) {
-            console.log(`Log: New column detected: ${key}. Migrating database...`);
-            // Adding as TEXT for maximum compatibility with any data type from Sheets
-            await pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${key} TEXT`);
+            console.log(`Schema Drift Detected: Adding column [${key}] to ${tableName}`);
+            // Using TEXT type for maximum flexibility with spreadsheet data
+            await pool.query(`ALTER TABLE ${tableName} ADD COLUMN ?? TEXT`, [key]);
         }
     }
 }
 
 /**
- * Sync Logic: Database to Google Sheet
- * Dynamically fetches all columns for a record and updates the sheet.
+ * DB -> Sheet Sync
+ * Handles Row identification and column mapping dynamically.
  */
 async function syncDbToSheet(sync_id: string) {
-    console.log(`Log: Starting synchronization for ID ${sync_id}`);
     try {
         const spreadsheetId = getSpreadsheetId();
-
         const [rows]: any = await pool.query('SELECT * FROM users WHERE sync_id = ?', [sync_id]);
         if (rows.length === 0) return;
 
         const userData = rows[0];
-        // Remove internal database timestamps if they exist
-        delete userData.id;
-        delete userData.updated_at;
-
-        const sheetData = await sheets.spreadsheets.values.get({
+        
+        // Fetch current headers to ensure data alignment
+        const sheetMetadata = await sheets.spreadsheets.values.get({
             spreadsheetId,
-            range: 'Sheet1!1:1', // Fetch headers to map columns
+            range: 'Sheet1!1:1',
         });
+        const headers = sheetMetadata.data.values?.[0] || [];
 
-        const headers = sheetData.data.values?.[0] || [];
+        // Find the correct row in Sheet
         const rowIndexData = await sheets.spreadsheets.values.get({
             spreadsheetId,
             range: 'Sheet1!A:A',
         });
-
-        const rowIndex = (rowIndexData.data.values || []).findIndex(row => row[0] === sync_id) + 1;
+        const rowsInSheet = rowIndexData.data.values || [];
+        const rowIndex = rowsInSheet.findIndex(r => r[0] === sync_id) + 1;
 
         if (rowIndex > 0) {
-            // Map database values to the correct header positions in the sheet
-            const valuesToUpdate = headers.map((header: string) => userData[header] || "");
-
+            const valuesToUpdate = headers.map(h => userData[h] !== undefined ? userData[h].toString() : "");
             await sheets.spreadsheets.values.update({
                 spreadsheetId,
                 range: `Sheet1!A${rowIndex}`,
                 valueInputOption: 'USER_ENTERED',
                 requestBody: { values: [valuesToUpdate] }
             });
-            console.log(`Log: Sheet synchronized for ID ${sync_id}`);
+            console.log(`Sync Successful: DB -> Sheet (ID: ${sync_id})`);
         }
     } catch (error) {
-        console.error("Error: Sync failed:", (error as Error).message);
+        console.error("DB to Sheet Sync Failed:", error);
     }
 }
 
 /**
- * Webhook Endpoint: Dynamic Sheet -> Database
+ * Webhook: Sheet -> DB
  */
 app.post('/webhook/sheet-update', async (req: Request, res: Response) => {
     const data = req.body;
     const { sync_id } = data;
-
-    if (!sync_id) return res.status(400).json({ error: "sync_id is required" });
+    if (!sync_id) return res.status(400).json({ error: "Missing sync_id" });
 
     try {
-        // 1. Check and update table schema if new columns exist in Sheet
         await ensureSchemaMatches('users', data);
 
-        // 2. Build Dynamic UPSERT query
         const keys = Object.keys(data);
         const values = Object.values(data);
         const placeholders = keys.map(() => '?').join(', ');
-        const updateStr = keys.map(key => `${key} = VALUES(${key})`).join(', ');
+        const updateStr = keys.map(key => `?? = VALUES(??)`).join(', ');
+        
+        // Prepare update assignments for ON DUPLICATE KEY
+        const updateParams: string[] = [];
+        keys.forEach(k => { updateParams.push(k); updateParams.push(k); });
 
         const sql = `
-            INSERT INTO users (${keys.join(', ')}) 
+            INSERT INTO users (??) 
             VALUES (${placeholders}) 
             ON DUPLICATE KEY UPDATE ${updateStr}
         `;
 
-        await pool.query(sql, values);
-        console.log(`Log: Dynamic sync complete for ID ${sync_id}`);
+        // Flatten parameters: [colNames, ...values, ...updateColPairs]
+        await pool.query(sql, [keys, ...values, ...keys.flatMap(k => [k, k])]);
+        
+        console.log(`✅ Webhook: Sheet -> DB Updated (ID: ${sync_id})`);
         res.status(200).json({ status: 'success' });
     } catch (error) {
-        console.error('Error: Webhook sync failed:', error);
+        console.error('Webhook Error:', error);
         res.status(500).json({ status: 'error' });
     }
 });
 
 /**
- * API Endpoint: Dynamic Dashboard Update
+ * API: Dashboard -> DB -> Sheet
  */
 app.post('/api/update-user', async (req: Request, res: Response) => {
     const data = req.body;
     const { sync_id } = data;
+    if (!sync_id) return res.status(400).json({ message: "sync_id required" });
 
     try {
         await ensureSchemaMatches('users', data);
 
         const keys = Object.keys(data).filter(k => k !== 'sync_id');
         const values = keys.map(k => data[k]);
-        const setStr = keys.map(k => `${k} = ?`).join(', ');
+        
+        const sql = `UPDATE users SET ? WHERE sync_id = ?`;
+        // mysql2 allows passing an object for 'SET ?'
+        const [result]: any = await pool.query(sql, [data, sync_id]);
 
-        const sql = `UPDATE users SET ${setStr} WHERE sync_id = ?`;
-        const [result]: any = await pool.query(sql, [...values, sync_id]);
-
-        if (result.affectedRows === 0) return res.status(404).json({ message: "Not found" });
+        if (result.affectedRows === 0) {
+            // If ID doesn't exist, create it (Multiplayer support)
+            await pool.query(`INSERT INTO users SET ?`, [data]);
+        }
 
         await syncDbToSheet(sync_id);
-        res.json({ message: "Dynamic update successful" });
+        res.json({ message: "Synchronized update complete" });
     } catch (error) {
-        console.error("Error: Dashboard update failed:", error);
-        res.status(500).json({ message: "Internal server error" });
+        console.error("Dashboard API Error:", error);
+        res.status(500).json({ message: "Update failed" });
     }
 });
-
-app.get('/test-db', async (req: Request, res: Response) => {
-    try {
-        const [rows] = await pool.query('SELECT 1 + 1 AS solution');
-        res.json({ status: 'success', test_result: rows });
-    } catch (error) {
-        res.status(500).json({ status: 'error', message: (error as Error).message });
-    }
-});
-
 
 app.get('/test-db-schema', async (req: Request, res: Response) => {
     try {
         const [columns]: any = await pool.query('SHOW COLUMNS FROM users');
-        const columnNames = columns.map((col: any) => col.Field);
-        res.json({ columns: columnNames });
+        res.json({ columns: columns.map((col: any) => col.Field) });
     } catch (error) {
-        res.status(500).json({ error: (error as Error).message });
+        res.status(500).json({ error: "Could not fetch schema" });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server Status: Online | Port: ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
